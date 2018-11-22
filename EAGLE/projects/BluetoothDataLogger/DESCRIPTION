@@ -1,0 +1,2 @@
+<b> Bluetooth Data logger </b>
+<p> This is a Sensor data logging circuit which logs Temperature/Humidity sensor data to a 7-segment display and/or to an Android smartphone using Bluetooth module (HC-05) and ATmega16a microcontroller </p>
