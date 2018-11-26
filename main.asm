@@ -5,7 +5,9 @@
 .def	delayReg2 = r19
 .def	delayReg3 = r20
 .def	count = r21
-.def	zeichen = r22
+.def	char = r22
+
+longString: .db "Ein langer, langer Test String.", '\n', 0
 
 .equ F_CPU = 4000000                            ; Systemtakt in Hz
 .equ BAUD  = 9600                               ; Baudrate
@@ -62,11 +64,11 @@ mainloop:
 	sbic	PIND,	7	; skip next if Input 7 is not active
 	rjmp	mainloop
 
-	ldi		count,	5
-
-
+	ldi		zl,		low(longString << 1)	; point the Z Pointer to our constant String in Program Memory
+	ldi		zh,		high(longString << 1)
 	rcall	btTest
 
+	ldi		count,	5
 
 	again:
 	rcall	blink
@@ -77,48 +79,22 @@ mainloop:
 
 
 btTest:
-    ldi     zeichen, 'T'
-    rcall   serout
-    ldi     zeichen, 'e'
-    rcall   serout
-    ldi     zeichen, 's'
-    rcall   serout
-    ldi     zeichen, 't'
-    rcall   serout
-    ldi     zeichen, '!'
-    rcall   serout
-	ldi     zeichen, ' '
-    rcall   serout
-    ldi     zeichen, 'v'
-    rcall   serout
-    ldi     zeichen, 'o'
-    rcall   serout
-    ldi     zeichen, 'n'
-    rcall   serout
-    ldi     zeichen, ' '
-    rcall   serout
-	ldi     zeichen, 'M'
-    rcall   serout
-    ldi     zeichen, 'i'
-    rcall   serout
-    ldi     zeichen, 'l'
-    rcall   serout
-    ldi     zeichen, 'a'
-    rcall   serout
-    ldi     zeichen, 'n'
-    rcall   serout
-    ldi     zeichen, 10
-    rcall   serout
-    ;ldi     zeichen, 13
-    ;rcall   serout
-    ;rcall   sync                        
+    lpm		char,	Z		; Load next Character from Program Memory where Z points to
+	or		char,	char	; If loaded 0, set the Zero Status register to 1 
+	breq	btTestEnd		; If Zero Status register is set, branch to end
+
+	rcall	serout
+	adiw	zh:zl,	1		; Increment the Z Pointer by 1
+	rjmp	btTest
+
+	btTestEnd:
     ret
 
 serout:
-    sbis    UCSRA,UDRE                  ; Warten bis UDR für das nächste
-                                        ; Byte bereit ist
+    sbis    UCSRA,UDRE      ; Wait until usart is ready for the next byte
     rjmp    serout
-    out     UDR, zeichen
+
+    out     UDR, char		; Put one character to the usart output
     ret
 
 blink:
