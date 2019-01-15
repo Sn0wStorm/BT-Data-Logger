@@ -78,6 +78,7 @@ mainloop:
 	rjmp	held
 
 
+; Send a Test String via BT
 btTest:
     lpm		char,	Z		; Load next Character from Program Memory where Z points to
 	or		char,	char	; If loaded 0, set the Zero Status register to 1 
@@ -90,6 +91,7 @@ btTest:
 	btTestEnd:
     ret
 
+; But the char into Serial Port
 serout:
     sbis    UCSRA,UDRE      ; Wait until usart is ready for the next byte
     rjmp    serout
@@ -97,38 +99,51 @@ serout:
     out     UDR, char		; Put one character to the usart output
     ret
 
+; Blink the LED
 blink:
 	;enable led
 	sbi		PORTD,	5
 	
 	;delay for a little while
-	ldi		delayReg1,	1
-	ldi		delayReg2,	0
-	ldi		delayReg3,	0
-	rcall	delay
+	rcall	delay1
 
 	;disable led
 	cbi		PORTD,	5
 
 	;delay for a long while
-	ldi		delayReg1,	3
-	ldi		delayReg2,	0
-	ldi		delayReg3,	0
-	rcall	delay
+	rcall	delay3
 	ret
 
 
+; Wait until the user releases the Button
 held:
 	sbis	PIND,		7		; skip next if Input 7 is active
 	rjmp	held
 	ldi		delayReg1,	0x01
 	ldi		delayReg2,	0x30
 	ldi		delayReg3,	0xFF
-	rcall	delay
+	rcall	exeDelay
 	rjmp	mainloop
 
 
-delay:
+; A Shorter Delay
+delay1:
+	ldi		delayReg1,	1
+	ldi		delayReg2,	0
+	ldi		delayReg3,	0
+	rcall exeDelay
+	ret
+
+; A little longer Delay
+delay3:
+	ldi		delayReg1,	3
+	ldi		delayReg2,	0
+	ldi		delayReg3,	0
+	rcall exeDelay
+	ret
+
+; Execute the Delay
+exeDelay:
 	dec		delayReg3
 	brne	delay
 	dec		delayReg2
