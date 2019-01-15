@@ -9,6 +9,11 @@
 
 longString: .db "Ein langer, langer Test String.", '\n', 0
 
+.equ G_LED = 4
+.equ R_LED = 5
+.equ SCK  = 6
+.equ DATA = 7
+
 .equ F_CPU = 4000000                            ; Systemtakt in Hz
 .equ BAUD  = 9600                               ; Baudrate
 
@@ -31,8 +36,13 @@ init:
 	ldi		xorReg,	0b00100000
 	;ldi		zeroReg, 0x00
 
-	ldi		var,	0b00100000
-	out		DDRD,	var		;Configure Port D5 as output
+	; Green LED 4
+	; Red	LED 5
+	; Sensor SCK 6
+	; Sensor Data 7
+
+	ldi		var,	0b11110000
+	out		DDRD,	var		;Configure Port D4,5,6,7 as output
 
 	;ldi		var,	0x00
 	;out		DDRC,	var		;Configure Ports C as input
@@ -40,10 +50,10 @@ init:
 	ldi		var,	0b10000000
 	out		PORTD,	var		;Enable Pull Up resistor on Port D7
 
-	ldi		var,	0b10100000
+	ldi		var,	0b10010000
 	;ldi		var,	0x00
 	;ldi		var,	0b00000000
-	out		PORTD,	var		; Turn LED on Port D5 on
+	out		PORTD,	var		; Turn LED on Port D4 on and pull Data high
 
 
 	; Baudrate einstellen
@@ -60,8 +70,18 @@ init:
 
     sbi     UCSRB,TXEN                  ; TX aktivieren
 
+
+
+	rcall	delay1sec	; wait for the sensor to initialize
+
+	rcall	measureTemp
+
 mainloop:
-	sbic	PIND,	7	; skip next if Input 7 is not active
+	;sbic	PIND,	7	; skip next if Input 7 is not active
+
+
+
+
 	rjmp	mainloop
 
 	ldi		zl,		low(longString << 1)	; point the Z Pointer to our constant String in Program Memory
@@ -76,6 +96,112 @@ mainloop:
 	brne	again
 
 	rjmp	held
+
+
+
+measureTemp:
+	rcall initSensor
+	rcall sendAddr
+	rcall sendCmdTemp
+	ret
+
+
+initSensor:
+
+	; Sending the init sequence
+	
+	; Set Data to 1
+	sbi		PORTD,	DATA
+
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	; Set Data to 0
+	cbi		PORTD,	DATA
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	ret
+
+
+sendAddr:
+	
+	; Sending 000
+
+	; Set Data to 0
+	cbi		PORTD,	DATA
+
+	ldi		var,	3
+	clockAddr:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	dec		var
+	brne	clockAddr
+	ret
+
+
+sendCmdTemp:
+
+	; Sending 000
+
+	ldi		var,	3
+	clockTemp1:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	dec		var
+	brne	clockTemp1
+
+	; Sending 1
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	; Set Data to 0
+	cbi		PORTD,	DATA
+
+	; Sending 1, keep Data high
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	; Set Data to input
+	cbi		DDRD,	DATA
+
+	; Wait 3 cycles until reading the Data line
+	nop
+	nop
+	nop
+
+	; If Data is still set, skip turning the led on
+	sbis	PIND,	DATA
+	sbi		PORTD,	R_LED
+	
+
+	ret
+
 
 
 ; Send a Test String via BT
@@ -126,6 +252,15 @@ held:
 	rjmp	mainloop
 
 
+; 1ms Delay
+
+delay1ms:
+	ldi		delayReg1,	0
+	ldi		delayReg2,	6
+	ldi		delayReg3,	49
+	rcall exeDelay
+	ret
+
 ; A Shorter Delay
 delay1:
 	ldi		delayReg1,	1
@@ -142,12 +277,20 @@ delay3:
 	rcall exeDelay
 	ret
 
+; Delay for 1 second
+delay1sec:
+	ldi  delayReg1, 21
+    ldi  delayReg2, 75
+    ldi  delayReg3, 191
+	rcall exeDelay
+	ret
+
 ; Execute the Delay
 exeDelay:
 	dec		delayReg3
-	brne	delay
+	brne	exeDelay
 	dec		delayReg2
-	brne	delay
+	brne	exeDelay
 	dec		delayReg1
-	brne	delay
+	brne	exeDelay
 	ret
