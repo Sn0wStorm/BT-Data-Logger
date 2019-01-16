@@ -1,13 +1,16 @@
 ;CKOPT 1, CKSEL3:1	111, CKSEL0 1, SUT1:0	01
 .def	var	=	r16
-.def	xorReg = r17
+.def	var2 = r17
 .def	delayReg1 = r18
 .def	delayReg2 = r19
 .def	delayReg3 = r20
-.def	count = r21
+.def	var3 = r21
 .def	char = r22
+.def	sensorDataB1 = r23
+.def	sensorDataB2 = r24
+.def	sensorCRC	= r25
 
-longString: .db "Ein langer, langer Test String.", '\n', 0
+longString: .db "Ein langer, langer Test String.", '\n'
 
 .equ G_LED = 4
 .equ R_LED = 5
@@ -33,8 +36,6 @@ init:
 	ldi		var,	high(RAMEND)
 	out		sph,	var
 
-	ldi		xorReg,	0b00100000
-	;ldi		zeroReg, 0x00
 
 	; Green LED 4
 	; Red	LED 5
@@ -70,6 +71,7 @@ init:
 
     sbi     UCSRB,TXEN                  ; TX aktivieren
 
+	rcall	btTest
 
 
 	rcall	delay1sec	; wait for the sensor to initialize
@@ -88,11 +90,11 @@ mainloop:
 	ldi		zh,		high(longString << 1)
 	rcall	btTest
 
-	ldi		count,	5
+	ldi		var3,	5
 
 	again:
 	rcall	blink
-	dec		count
+	dec		var3
 	brne	again
 
 	rjmp	held
@@ -103,12 +105,16 @@ measureTemp:
 	rcall initSensor
 	rcall sendAddr
 	rcall sendCmdTemp
+
 	ret
 
 
 initSensor:
 
 	; Sending the init sequence
+
+	; Set Data to output
+	sbi		DDRD,	DATA
 	
 	; Set Data to 1
 	sbi		PORTD,	DATA
@@ -195,14 +201,235 @@ sendCmdTemp:
 	nop
 	nop
 
-	; If Data is still set, skip turning the led on
-	sbis	PIND,	DATA
+	; If Data is not set, skip reading temp
+	sbic	PIND,	DATA
+	ret
+
+	;			#### Reading Temperature  #### 
+	;			#### Send Ack Clock Cycle to acknoledge Sensor response  #### 
+
+	; Turn Red Led on to indicate that we are communicating
 	sbi		PORTD,	R_LED
-	
+
+	; Send ACK
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	;			#### Wait for the Sensor to Send Data  #### 
+
+	rcall delay1ms
+
+	waitForTemp:
+	; Wait until Data pin is 0
+	sbic	PIND,	DATA
+	rjmp	waitForTemp
+
+
+	;			#### Read Data into our registers  #### 
+
+
+	ldi	sensorDataB1, 0
+	ldi	sensorDataB2, 0
+	ldi	sensorCRC, 0
+
+
+	;			#### Read first Byte  #### 
+
+	; Listen for 8 bits
+	ldi		var,	8
+	ldi		var2,	0b10000000
+	clockReadTemp1:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	sbic	PIND,	DATA
+	or		sensorDataB1, var2
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	lsr		var2
+	dec		var
+	brne	clockReadTemp1
+
+
+
+	; If Data is 1, skip returning
+	;sbis	PIND,	DATA
+	;ret
+	rcall sendDataAck
+
+
+
+	;			#### Read second Byte  #### 
+
+
+	; Listen for 8 bits
+	ldi		var,	8
+	ldi		var2,	0b10000000
+	clockReadTemp2:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	sbic	PIND,	DATA
+	or		sensorDataB2, var2
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	lsr		var2
+	dec		var
+	brne	clockReadTemp2
+
+
+	; If Data is 1, skip returning
+	;sbis	PIND,	DATA
+	;ret
+	rcall sendDataAck
+
+	;			#### Read CRC Byte  ####
+
+	; Listen for 8 bits
+	ldi		var,	8
+	ldi		var2,	0b10000000
+	clockReadTemp3:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	sbic	PIND,	DATA
+	or		sensorCRC, var2
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	lsr		var2
+	dec		var
+	brne	clockReadTemp3
+
+
+	;			#### Reset Outputs to prepare for next transmission  ####
+
+	; Set Data to output
+	sbi		DDRD,	DATA
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+
+	; Send ACK
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	; Turn Red Led back of
+	cbi		PORTD,	R_LED
+
+	rcall btSendBits
+
 
 	ret
 
 
+
+sendDataAck:
+	; Set Data to output
+	sbi		DDRD,	DATA
+
+	; Set Data to 0
+	cbi		PORTD,	DATA
+
+	; Set Data to input
+	cbi		DDRD,	DATA
+
+	; Send ACK
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	ret
+
+
+
+; Send the received bits via bluetooth
+btSendBits:
+
+;			#### Send the First Byte  ####
+
+	; Loop for 8 bits
+	ldi		var,	8
+	mov		var2,	sensorDataB1
+	btSendBitsLoop1:
+	
+	ldi		char,	'1'
+	
+	; If the left most Bit is set, we skip setting char to '0'
+	sbrs	var2,	7
+	ldi		char,	'0'
+
+	rcall serout
+
+	; Shift The Sensor data to the left
+	lsl		var2
+	dec		var
+	brne	btSendBitsLoop1
+
+	ldi		char,	' '
+	rcall	serout
+
+
+	;			#### Send the Second Byte  ####
+
+	
+	; Loop for 8 bits
+	ldi		var,	8
+	mov		var2,	sensorDataB2
+	btSendBitsLoop2:
+	
+	ldi		char,	'1'
+	
+	; If the left most Bit is set, we skip setting char to '0'
+	sbrs	var2,	7
+	ldi		char,	'0'
+
+	rcall serout
+
+	; Shift The Sensor data to the left
+	lsl		var2
+	dec		var
+	brne	btSendBitsLoop2
+
+	ldi		char,	' '
+	rcall	serout
+
+
+	;			#### Send the CRC Byte  ####
+
+	; Loop for 8 bits
+	ldi		var,	8
+	mov		var2,	sensorCRC
+	btSendBitsLoop3:
+	
+	ldi		char,	'1'
+	
+	; If the left most Bit is set, we skip setting char to '0'
+	sbrs	var2,	7
+	ldi		char,	'0'
+
+	rcall serout
+
+	; Shift The Sensor data to the left
+	lsl		var2
+	dec		var
+	brne	btSendBitsLoop3
+
+	ldi		char,	' '
+	rcall	serout
+
+	ldi		char,	'\n'
+	rcall	serout
+
+
+	ret
 
 ; Send a Test String via BT
 btTest:
@@ -217,7 +444,7 @@ btTest:
 	btTestEnd:
     ret
 
-; But the char into Serial Port
+; Put the char into Serial Port
 serout:
     sbis    UCSRA,UDRE      ; Wait until usart is ready for the next byte
     rjmp    serout
@@ -255,7 +482,7 @@ held:
 ; 1ms Delay
 
 delay1ms:
-	ldi		delayReg1,	0
+	ldi		delayReg1,	1
 	ldi		delayReg2,	6
 	ldi		delayReg3,	49
 	rcall exeDelay
