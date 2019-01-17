@@ -201,7 +201,7 @@ sendCmdTemp:
 	nop
 	nop
 
-	; If Data is not set, skip reading temp
+	; If Data is set, skip reading temp
 	sbic	PIND,	DATA
 	ret
 
@@ -255,9 +255,11 @@ sendCmdTemp:
 
 
 
-	; If Data is 1, skip returning
-	;sbis	PIND,	DATA
-	;ret
+	waitForTemp2:
+	; Wait until Data pin is 1
+	sbis	PIND,	DATA
+	rjmp	waitForTemp2
+
 	rcall sendDataAck
 
 
@@ -282,9 +284,11 @@ sendCmdTemp:
 	brne	clockReadTemp2
 
 
-	; If Data is 1, skip returning
-	;sbis	PIND,	DATA
-	;ret
+	waitForTemp3:
+	; Wait until Data pin is 1
+	sbis	PIND,	DATA
+	rjmp	waitForTemp3
+
 	rcall sendDataAck
 
 	;			#### Read CRC Byte  ####
@@ -324,6 +328,7 @@ sendCmdTemp:
 	cbi		PORTD,	R_LED
 
 	rcall btSendBits
+	rcall sendBytes
 
 
 	ret
@@ -337,14 +342,18 @@ sendDataAck:
 	; Set Data to 0
 	cbi		PORTD,	DATA
 
-	; Set Data to input
-	cbi		DDRD,	DATA
 
 	; Send ACK
 	; Set Clock to 1
 	sbi		PORTD,	SCK
 	; Set Clock to 0
 	cbi		PORTD,	SCK
+
+	; Set Data to input
+	cbi		DDRD,	DATA
+
+	; Enable Data Pull Up Resistor again
+	sbi		PORTD,	DATA
 
 	ret
 
@@ -430,6 +439,20 @@ btSendBits:
 
 
 	ret
+
+
+sendBytes:
+	mov char,	sensorDataB1
+	rcall serout
+
+	mov char,	sensorDataB2
+	rcall serout
+
+	mov char,	sensorCRC
+	rcall serout
+
+	ldi		char,	'\n'
+	rcall	serout
 
 ; Send a Test String via BT
 btTest:
