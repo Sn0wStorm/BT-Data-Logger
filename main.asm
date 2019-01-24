@@ -79,12 +79,16 @@ init:
 	rcall	measureTemp
 
 mainloop:
-	;sbic	PIND,	7	; skip next if Input 7 is not active
 
+	rcall	delay3sec
 
+	rcall	measureTemp
 
 
 	rjmp	mainloop
+
+
+
 
 	ldi		zl,		low(longString << 1)	; point the Z Pointer to our constant String in Program Memory
 	ldi		zh,		high(longString << 1)
@@ -327,7 +331,7 @@ sendCmdTemp:
 	; Turn Red Led back of
 	cbi		PORTD,	R_LED
 
-	rcall btSendBits
+	;rcall btSendBits
 	rcall sendBytes
 
 
@@ -359,7 +363,7 @@ sendDataAck:
 
 
 
-; Send the received bits via bluetooth
+; Send the received bits as a String on 1 and 0 via bluetooth
 btSendBits:
 
 ;			#### Send the First Byte  ####
@@ -440,7 +444,7 @@ btSendBits:
 
 	ret
 
-
+; Send the Bytes directly as chars
 sendBytes:
 	mov char,	sensorDataB1
 	rcall serout
@@ -532,6 +536,14 @@ delay1sec:
 	ldi  delayReg1, 21
     ldi  delayReg2, 75
     ldi  delayReg3, 191
+	rcall exeDelay
+	ret
+
+; Delay for 3 seconds
+delay3sec:
+	ldi  delayReg1, 61
+    ldi  delayReg2, 225
+    ldi  delayReg3, 64
 	rcall exeDelay
 	ret
 
