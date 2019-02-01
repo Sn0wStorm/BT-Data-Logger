@@ -9,6 +9,9 @@
 .def	sensorDataB1 = r23
 .def	sensorDataB2 = r24
 .def	sensorCRC	= r25
+.def	sensorHumB1 = r26
+.def	sensorHumB2 = r27
+.def	sensorHumCRC = r28
 
 longString: .db "Ein langer, langer Test String.", '\n'
 
@@ -76,13 +79,15 @@ init:
 
 	rcall	delay1sec	; wait for the sensor to initialize
 
-	rcall	measureTemp
-
 mainloop:
 
 	rcall	delay3sec
 
 	rcall	measureTemp
+	rcall	measureHumidity
+
+	;rcall btSendBits
+	rcall sendBytes
 
 
 	rjmp	mainloop
@@ -106,6 +111,13 @@ mainloop:
 
 
 measureTemp:
+	rcall initSensor
+	rcall sendAddr
+	rcall sendCmdHum
+
+	ret
+
+measureHumidity:
 	rcall initSensor
 	rcall sendAddr
 	rcall sendCmdTemp
@@ -163,6 +175,7 @@ sendAddr:
 
 
 sendCmdTemp:
+	; Cmd is 00011
 
 	; Sending 000
 
@@ -331,8 +344,188 @@ sendCmdTemp:
 	; Turn Red Led back of
 	cbi		PORTD,	R_LED
 
-	;rcall btSendBits
-	rcall sendBytes
+
+	ret
+
+
+sendCmdHum:
+	; Cmd is 00101
+
+	; Sending 00
+
+	ldi		var,	2
+	clockHum1:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	dec		var
+	brne	clockHum1
+
+	; Sending 1
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	; Set Data to 0
+	cbi		PORTD,	DATA
+
+	; Sending 0
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	; Set Data to 0
+	cbi		PORTD,	DATA
+
+	; Sending 1, keep Data high
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	; Set Data to input
+	cbi		DDRD,	DATA
+
+	; Wait 3 cycles until reading the Data line
+	nop
+	nop
+	nop
+
+	; If Data is set, skip reading temp
+	sbic	PIND,	DATA
+	ret
+
+	;			#### Reading Humidity  #### 
+	;			#### Send Ack Clock Cycle to acknoledge Sensor response  #### 
+
+	; Turn Red Led on to indicate that we are communicating
+	sbi		PORTD,	R_LED
+
+	; Send ACK
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	;			#### Wait for the Sensor to Send Data  #### 
+
+	rcall delay1ms
+
+	waitForHum:
+	; Wait until Data pin is 0
+	sbic	PIND,	DATA
+	rjmp	waitForHum
+
+
+	;			#### Read Data into our registers  #### 
+
+
+	ldi	sensorHumB1, 0
+	ldi	sensorHumB2, 0
+	ldi	sensorHumCRC, 0
+
+
+	;			#### Read first Byte  #### 
+
+	; Listen for 8 bits
+	ldi		var,	8
+	ldi		var2,	0b10000000
+	clockReadHum1:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	sbic	PIND,	DATA
+	or		sensorHumB1, var2
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	lsr		var2
+	dec		var
+	brne	clockReadHum1
+
+
+
+	waitForHum2:
+	; Wait until Data pin is 1
+	sbis	PIND,	DATA
+	rjmp	waitForHum2
+
+	rcall sendDataAck
+
+	;			#### Read second Byte  #### 
+
+
+	; Listen for 8 bits
+	ldi		var,	8
+	ldi		var2,	0b10000000
+	clockReadHum2:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	sbic	PIND,	DATA
+	or		sensorHumB2, var2
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	lsr		var2
+	dec		var
+	brne	clockReadHum2
+
+
+	waitForHum3:
+	; Wait until Data pin is 1
+	sbis	PIND,	DATA
+	rjmp	waitForHum3
+
+	rcall sendDataAck
+
+	;			#### Read CRC Byte  ####
+
+	; Listen for 8 bits
+	ldi		var,	8
+	ldi		var2,	0b10000000
+	clockReadHum3:
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+
+	sbic	PIND,	DATA
+	or		sensorHumCRC, var2
+
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+	lsr		var2
+	dec		var
+	brne	clockReadHum3
+
+
+	;			#### Reset Outputs to prepare for next transmission  ####
+
+	; Set Data to output
+	sbi		DDRD,	DATA
+
+	; Set Data to 1
+	sbi		PORTD,	DATA
+
+	; Send ACK
+	; Set Clock to 1
+	sbi		PORTD,	SCK
+	; Set Clock to 0
+	cbi		PORTD,	SCK
+
+	; Turn Red Led back of
+	cbi		PORTD,	R_LED
 
 
 	ret
@@ -453,6 +646,15 @@ sendBytes:
 	rcall serout
 
 	mov char,	sensorCRC
+	rcall serout
+
+	mov char,	sensorHumB1
+	rcall serout
+
+	mov char,	sensorHumB2
+	rcall serout
+
+	mov char,	sensorHumCRC
 	rcall serout
 
 	ldi		char,	'\n'
