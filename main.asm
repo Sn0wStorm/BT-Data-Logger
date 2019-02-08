@@ -8,12 +8,17 @@
 .def	char = r22
 .def	sensorDataB1 = r23
 .def	sensorDataB2 = r24
-.def	sensorCRC	= r25
-.def	sensorHumB1 = r26
-.def	sensorHumB2 = r27
-.def	sensorHumCRC = r28
+.def	sensorDataCRC = r25
 
 longString: .db "Ein langer, langer Test String.", '\n'
+
+; The Positions in SRam where our Data will be stored
+.equ sensorTempB1 = 0x0060
+.equ sensorTempB2 = 0x0061
+.equ sensorTempCRC = 0x0062
+.equ sensorHumB1 = 0x0063
+.equ sensorHumB2 = 0x0064
+.equ sensorHumCRC = 0x0065
 
 .equ G_LED = 4
 .equ R_LED = 5
@@ -74,20 +79,20 @@ init:
 
     sbi     UCSRB,TXEN                  ; TX aktivieren
 
-	rcall	btTest
+	;rcall	btTest
 
 
 	rcall	delay1sec	; wait for the sensor to initialize
 
 mainloop:
 
-	rcall	delay3sec
+	rcall	delay2sec
 
 	rcall	measureTemp
 	rcall	measureHumidity
 
 	;rcall btSendBits
-	rcall sendBytes
+	rcall btSendBytes
 
 
 	rjmp	mainloop
@@ -113,14 +118,14 @@ mainloop:
 measureTemp:
 	rcall initSensor
 	rcall sendAddr
-	rcall sendCmdHum
+	rcall sendCmdTemp
 
 	ret
 
 measureHumidity:
 	rcall initSensor
 	rcall sendAddr
-	rcall sendCmdTemp
+	rcall sendCmdHum
 
 	ret
 
@@ -249,7 +254,7 @@ sendCmdTemp:
 
 	ldi	sensorDataB1, 0
 	ldi	sensorDataB2, 0
-	ldi	sensorCRC, 0
+	ldi	sensorDataCRC, 0
 
 
 	;			#### Read first Byte  #### 
@@ -318,7 +323,7 @@ sendCmdTemp:
 	sbi		PORTD,	SCK
 
 	sbic	PIND,	DATA
-	or		sensorCRC, var2
+	or		sensorDataCRC, var2
 
 	; Set Clock to 0
 	cbi		PORTD,	SCK
@@ -340,6 +345,11 @@ sendCmdTemp:
 	sbi		PORTD,	SCK
 	; Set Clock to 0
 	cbi		PORTD,	SCK
+
+	; Store the Recieved Data into the SRam Locations defined at the Top
+	sts		sensorTempB1, sensorDataB1
+	sts		sensorTempB2, sensorDataB2
+	sts		sensorTempCRC, sensorDataCRC
 
 	; Turn Red Led back of
 	cbi		PORTD,	R_LED
@@ -375,14 +385,10 @@ sendCmdHum:
 
 	; Sending 0
 
-	; Set Data to 1
-	sbi		PORTD,	DATA
 	; Set Clock to 1
 	sbi		PORTD,	SCK
 	; Set Clock to 0
 	cbi		PORTD,	SCK
-	; Set Data to 0
-	cbi		PORTD,	DATA
 
 	; Sending 1, keep Data high
 
@@ -390,8 +396,6 @@ sendCmdHum:
 	sbi		PORTD,	DATA
 	; Set Clock to 1
 	sbi		PORTD,	SCK
-
-
 	; Set Clock to 0
 	cbi		PORTD,	SCK
 
@@ -403,7 +407,7 @@ sendCmdHum:
 	nop
 	nop
 
-	; If Data is set, skip reading temp
+	; If Data is set, skip reading humidity
 	sbic	PIND,	DATA
 	ret
 
@@ -432,9 +436,9 @@ sendCmdHum:
 	;			#### Read Data into our registers  #### 
 
 
-	ldi	sensorHumB1, 0
-	ldi	sensorHumB2, 0
-	ldi	sensorHumCRC, 0
+	ldi	sensorDataB1, 0
+	ldi	sensorDataB2, 0
+	ldi	sensorDataCRC, 0
 
 
 	;			#### Read first Byte  #### 
@@ -447,7 +451,7 @@ sendCmdHum:
 	sbi		PORTD,	SCK
 
 	sbic	PIND,	DATA
-	or		sensorHumB1, var2
+	or		sensorDataB1, var2
 
 	; Set Clock to 0
 	cbi		PORTD,	SCK
@@ -475,7 +479,7 @@ sendCmdHum:
 	sbi		PORTD,	SCK
 
 	sbic	PIND,	DATA
-	or		sensorHumB2, var2
+	or		sensorDataB2, var2
 
 	; Set Clock to 0
 	cbi		PORTD,	SCK
@@ -501,7 +505,7 @@ sendCmdHum:
 	sbi		PORTD,	SCK
 
 	sbic	PIND,	DATA
-	or		sensorHumCRC, var2
+	or		sensorDataCRC, var2
 
 	; Set Clock to 0
 	cbi		PORTD,	SCK
@@ -523,6 +527,11 @@ sendCmdHum:
 	sbi		PORTD,	SCK
 	; Set Clock to 0
 	cbi		PORTD,	SCK
+
+	; Store the Recieved Data into the SRam Locations defined at the Top
+	sts		sensorHumB1, sensorDataB1
+	sts		sensorHumB2, sensorDataB2
+	sts		sensorHumCRC, sensorDataCRC
 
 	; Turn Red Led back of
 	cbi		PORTD,	R_LED
@@ -563,7 +572,7 @@ btSendBits:
 
 	; Loop for 8 bits
 	ldi		var,	8
-	mov		var2,	sensorDataB1
+	lds		var2,	sensorTempB1
 	btSendBitsLoop1:
 	
 	ldi		char,	'1'
@@ -588,7 +597,7 @@ btSendBits:
 	
 	; Loop for 8 bits
 	ldi		var,	8
-	mov		var2,	sensorDataB2
+	lds		var2,	sensorTempB2
 	btSendBitsLoop2:
 	
 	ldi		char,	'1'
@@ -612,7 +621,7 @@ btSendBits:
 
 	; Loop for 8 bits
 	ldi		var,	8
-	mov		var2,	sensorCRC
+	lds		var2,	sensorTempCRC
 	btSendBitsLoop3:
 	
 	ldi		char,	'1'
@@ -638,23 +647,81 @@ btSendBits:
 	ret
 
 ; Send the Bytes directly as chars
-sendBytes:
-	mov char,	sensorDataB1
+; Load each Byte directly from SRam
+btSendBytes:
+	; send two sync bytes first, so the client knows where to start decoding
+	ldi		char,	123
+	rcall serout
+	ldi		char,	127
 	rcall serout
 
-	mov char,	sensorDataB2
+	lds		char,	sensorTempB1
+	lsr		char
+	lsr		char
+	lsr		char
+	lsr		char
 	rcall serout
 
-	mov char,	sensorCRC
+	lds		char,	sensorTempB1
+	andi	char,	0b00001111
 	rcall serout
 
-	mov char,	sensorHumB1
+	lds		char,	sensorTempB2
+	lsr		char
+	lsr		char
+	lsr		char
+	lsr		char
 	rcall serout
 
-	mov char,	sensorHumB2
+	lds		char,	sensorTempB2
+	andi	char,	0b00001111
 	rcall serout
 
-	mov char,	sensorHumCRC
+
+
+
+	lds		char,	sensorHumB1
+	lsr		char
+	lsr		char
+	lsr		char
+	lsr		char
+	rcall serout
+
+	lds		char,	sensorHumB1
+	andi	char,	0b00001111
+	rcall serout
+
+	lds		char,	sensorHumB2
+	lsr		char
+	lsr		char
+	lsr		char
+	lsr		char
+	rcall serout
+
+	lds		char,	sensorHumB2
+	andi	char,	0b00001111
+	rcall serout
+
+	lds		char,	sensorTempCRC
+	lsr		char
+	lsr		char
+	lsr		char
+	lsr		char
+	rcall serout
+
+	lds		char,	sensorTempCRC
+	andi	char,	0b00001111
+	rcall serout
+
+	lds		char,	sensorHumCRC
+	lsr		char
+	lsr		char
+	lsr		char
+	lsr		char
+	rcall serout
+
+	lds		char,	sensorHumCRC
+	andi	char,	0b00001111
 	rcall serout
 
 	ldi		char,	'\n'
@@ -742,10 +809,10 @@ delay1sec:
 	ret
 
 ; Delay for 3 seconds
-delay3sec:
-	ldi  delayReg1, 61
-    ldi  delayReg2, 225
-    ldi  delayReg3, 64
+delay2sec:
+	ldi  delayReg1, 41
+    ldi  delayReg2, 150
+    ldi  delayReg3, 128
 	rcall exeDelay
 	ret
 
