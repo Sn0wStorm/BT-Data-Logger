@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">BT Data Logger</string>
+    <string name="humidity">Humidity</string>
+    <string name="Connected">Connected</string>
+    <string name="Disconnected">Disconnected</string>
+    <string name="Connecting">Connecting...</string>
+</resources>
